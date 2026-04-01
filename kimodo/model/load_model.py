@@ -108,6 +108,7 @@ def load_model(
     eval_mode: bool = True,
     default_family: Optional[str] = "Kimodo",
     return_resolved_name: bool = False,
+    text_encoder=None,
 ):
     """Load a kimodo model by name (e.g. 'g1', 'soma').
 
@@ -126,6 +127,8 @@ def load_model(
             Default "Kimodo".
         return_resolved_name: If True, return (model, resolved_short_key). If False,
             return only the model.
+        text_encoder: Pre-built text encoder to reuse. When provided, skips
+            text encoder selection/instantiation entirely.
 
     Returns:
         Loaded model in eval mode, or (model, resolved short key) if
@@ -176,17 +179,30 @@ def load_model(
         # Same process at the moment for TMR and Kimodo
         pass
 
-    text_encoder_url = get_env_var("TEXT_ENCODER_URL", DEFAULT_TEXT_ENCODER_URL)
-    runtime_conf = OmegaConf.create(
-        {
-            "checkpoint_dir": str(model_path),
-            "text_encoder": _select_text_encoder_conf(text_encoder_url),
-        }
-    )
+    if text_encoder is not None:
+        runtime_conf = OmegaConf.create({"checkpoint_dir": str(model_path)})
+    else:
+        text_encoder_url = get_env_var("TEXT_ENCODER_URL", DEFAULT_TEXT_ENCODER_URL)
+        runtime_conf = OmegaConf.create(
+            {
+                "checkpoint_dir": str(model_path),
+                "text_encoder": _select_text_encoder_conf(text_encoder_url),
+            }
+        )
+
     model_cfg = OmegaConf.to_container(OmegaConf.merge(model_conf, runtime_conf), resolve=True)
     model_cfg.pop("checkpoint_dir", None)
 
+    if text_encoder is not None:
+        # Prevent Hydra from instantiating a new text encoder; pass None so
+        # Kimodo.__init__ receives a placeholder we replace immediately after.
+        model_cfg["text_encoder"] = None
+
     model = instantiate_from_dict(model_cfg, overrides={"device": device})
+
+    if text_encoder is not None:
+        model.text_encoder = text_encoder
+
     if eval_mode:
         model = model.eval()
     if return_resolved_name:

@@ -57,6 +57,7 @@ class Demo:
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {self.device}")
         self.models: dict[str, ModelBundle] = {}
+        self._text_encoder = None
         resolved = resolve_model_name(default_model_name, "Kimodo")
         if resolved not in MODEL_NAMES:
             raise ValueError(f"Unknown model '{default_model_name}'. Expected one of: {MODEL_NAMES}")
@@ -129,12 +130,18 @@ class Demo:
 
         print(f"Loading model {model_name}...")
         try:
-            model = load_model(modelname=model_name, device=self.device)
+            model = load_model(
+                modelname=model_name,
+                device=self.device,
+                text_encoder=self._text_encoder,
+            )
         except Exception as e:
             print(f"Error loading model: {e}\nMake sure text encoder server is running!")
             raise e
 
         if hasattr(model, "text_encoder"):
+            if self._text_encoder is None:
+                self._text_encoder = model.text_encoder
             model.text_encoder = CachedTextEncoder(model.text_encoder, model_name=model_name)
 
         skeleton = model.motion_rep.skeleton
